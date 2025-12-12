@@ -1,0 +1,59 @@
+pipeline {
+  agent any
+
+  environment {
+    REPO = 'https://github.com/GNABARR/fit-front.git'
+    BRANCH = 'master'
+
+    FRONT_HOST = '172.20.3.20'
+    FRONT_USER = 'fitness'
+    FRONT_PORT = '22'
+    FRONT_DIR = '~/monapp'
+
+    BUILD_CMD = 'npm ci && npm run build'
+    FRONT_APP_PORT = '3000'
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        echo "Clonage du repo Vite React..."
+        git branch: "${BRANCH}", url: "${REPO}"
+      }
+    }
+
+    stage('Install & Build') {
+      steps {
+        echo "Installation des dépendances et build..."
+        sh "${BUILD_CMD}"
+      }
+    }
+
+    stage('Deploy to Front VM') {
+      steps {
+        echo "Déploiement du dossier dist/ sur la front VM..."
+
+        sh """
+          ssh -p ${FRONT_PORT} ${FRONT_USER}@${FRONT_HOST} 'mkdir -p ${FRONT_DIR}'
+
+          scp -P ${FRONT_PORT} -r dist/* ${FRONT_USER}@${FRONT_HOST}:${FRONT_DIR}/
+
+          ssh -p ${FRONT_PORT} ${FRONT_USER}@${FRONT_HOST} 'sudo chown -R www-data:www-data ${FRONT_DIR} || true'
+
+          ssh -p ${FRONT_PORT} ${FRONT_USER}@${FRONT_HOST} 'sudo systemctl reload nginx || true'
+        """
+      }
+    }
+
+  }
+
+  post {
+    success {
+      echo "Déploiement terminé ! Vérifiez : http://${FRONT_HOST}:${FRONT_APP_PORT}"
+    }
+    failure {
+      echo "Le pipeline a échoué. Vérifiez les logs."
+    }
+  }
+}
