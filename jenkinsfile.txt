@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+    
+    tools {
+        nodejs 'system-nodejs' 
+    }
+    
+    environment {
+        FRONT_HOST = "172.20.3.20"
+        FRONT_USER = "fitness"        
+        FRONT_PATH = "/var/www/html/my-app" 
+        
+        CREDENTIALS_ID = "ssh-front-dev" 
+    }
+    
+    stages {
+        stage('Clone') {
+            steps {
+                git branch: 'master',
+                    url: 'https://github.com/FitGR/fit-front.git'
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                anyOf {
+                    expression { fileExists('dist') }
+                    expression { fileExists('build') }
+                }
+            }
+            steps {
+                sshagent(credentials: [env.CREDENTIALS_ID]) {
+                    sh """
+                        echo "Cleaning remote directory..."
+                        ssh -o StrictHostKeyChecking=no ${FRONT_USER}@${FRONT_HOST} "rm -rf ${FRONT_PATH}/*"
+
+                        echo "Copying Frontend Build..."
+                        scp -o StrictHostKeyChecking=no -r dist/* ${FRONT_USER}@${FRONT_HOST}:${FRONT_PATH}
+
+                        echo "Reloading Nginx (Optional)..."
+                        ssh -o StrictHostKeyChecking=no ${FRONT_USER}@${FRONT_HOST} "sudo systemctl reload nginx"
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "Frontend deployment succeeded!"
+        }
+        failure {
+            echo "Frontend deployment failed!"
+        }
+    }
+}
